@@ -4,37 +4,23 @@ from app.models.email import Email, EmailStatus
 from app.models.transaction import Transaction, TxType, TxStatus
 from app.models.account import Account
 from app.models.auto_assign_rule import AutoAssignRule
-from app.models.budget import Budget
 from app.models.budget_period import BudgetPeriod
 from app.parsers.registry import find_parser
-from app.parsers.base import ParseResult
+from app.parsers.base import extract_email_address
+from app.parsers.senders import is_transactional
 
 
 def process_email(db: Session, email_data: dict) -> Email:
-    """Procesa un email crudo: lo guarda en DB y intenta parsearlo."""
+    """Procesa un email crudo: lo guarda en DB y, si el remitente está en el
+    registro de direcciones transaccionales, intenta parsearlo."""
 
-    # Verificar deduplicación
+    # Deduplicación
     existing = db.scalars(
         select(Email).where(Email.gmail_message_id == email_data["gmail_message_id"])
     ).first()
     if existing:
         return existing
 
-    # Buscar parser
-    parser = find_parser(email_data["sender"])
-    if parser is None:
-        email = Email(
-            gmail_message_id=email_data["gmail_message_id"],
-            sender=email_data["sender"],
-            subject=email_data["subject"],
-            body_html=email_data["body_html"],
-            received_at=email_data["received_at"],
-            status=EmailStatus.SKIPPED,
-        )
-        db.add(email)
-        return email
-
-    # Intentar parsear
     email = Email(
         gmail_message_id=email_data["gmail_message_id"],
         sender=email_data["sender"],
@@ -43,8 +29,23 @@ def process_email(db: Session, email_data: dict) -> Email:
         received_at=email_data["received_at"],
     )
 
+    # Gate 1: ¿el remitente está en el registro de direcciones transaccionales?
+    addr = extract_email_address(email_data["sender"])
+    if not is_transactional(addr):
+        email.status = EmailStatus.SKIPPED
+        db.add(email)
+        return email
+
+    # Gate 2: ¿algún parser reclama este remitente?
+    # (Si el registro tiene una dirección sin parser asociado, se omite con un warning)
+    parser = find_parser(email_data["sender"])
+    if parser is None:
+        email.status = EmailStatus.SKIPPED
+        db.add(email)
+        return email
+
     try:
-        raw = parser.parse(email_data["body_html"])
+        raw = parser.parse(email_data["body_html"], sender=email_data["sender"])
         results = raw if isinstance(raw, list) else [raw]
 
         email.status = EmailStatus.PARSED
@@ -59,7 +60,7 @@ def process_email(db: Session, email_data: dict) -> Email:
             if not account:
                 account = db.scalars(select(Account).order_by(Account.id)).first()
 
-            # Buscar regla de auto-assign
+            # Auto-assign rule
             category_id = None
             budget_period_id = None
             rule = db.scalars(
@@ -93,6 +94,7 @@ def process_email(db: Session, email_data: dict) -> Email:
             db.add(tx)
 
     except Exception:
+        # Error real de parseo: el remitente es transaccional pero el formato es nuevo
         email.status = EmailStatus.PENDING
         db.add(email)
 

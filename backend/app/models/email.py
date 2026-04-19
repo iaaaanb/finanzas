@@ -1,6 +1,5 @@
 import enum
 from datetime import datetime
-from typing import Optional
 
 from sqlalchemy import String, Text, DateTime, Enum, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -34,6 +33,8 @@ class Email(Base):
         DateTime, nullable=False, server_default=func.now()
     )
 
-    transaction: Mapped[Optional["Transaction"]] = relationship(
+    # Lista (no Optional[Transaction]): un email puede generar múltiples txs
+    # (ej: transferencia entre cuentas propias)
+    transactions: Mapped[list["Transaction"]] = relationship(
         back_populates="email"
     )

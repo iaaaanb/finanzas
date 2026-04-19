@@ -3,15 +3,20 @@ from datetime import date, datetime
 
 from bs4 import BeautifulSoup
 
-from app.parsers.base import BankParser, ParseResult
+from app.parsers.base import BankParser, ParseResult, extract_email_address
 from app.parsers.registry import register
+from app.parsers.senders import TRANSACTIONAL_SENDERS
+
+_MINE = frozenset({
+    addr for addr in TRANSACTIONAL_SENDERS if "bancofalabella" in addr
+})
 
 
 class BancoFalabellaParser(BankParser):
     def matches(self, sender: str) -> bool:
-        return "bancofalabella" in sender.lower() or "falabella" in sender.lower()
+        return extract_email_address(sender) in _MINE
 
-    def parse(self, email_html: str) -> ParseResult:
+    def parse(self, email_html: str, sender: str = "") -> ParseResult:
         soup = BeautifulSoup(email_html, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         kv = self._extract_kv(soup)
@@ -25,7 +30,7 @@ class BancoFalabellaParser(BankParser):
             raw_amount = m.group(1)
         amount = int(raw_amount.replace("$", "").replace(".", "").strip())
 
-        # --- Contraparte: "nuestro(a) cliente NOMBRE ha instruído..." ---
+        # --- Contraparte ---
         counterpart = "Desconocido"
         cp_match = re.search(
             r"(?:nuestro\(?a?\)?\s+)?cliente\s+(.+?)\s+ha\b",
@@ -60,7 +65,6 @@ class BancoFalabellaParser(BankParser):
 
     @staticmethod
     def _extract_kv(soup: BeautifulSoup) -> dict[str, str]:
-        """Extrae pares clave/valor de filas <tr> con 2 <td>."""
         kv: dict[str, str] = {}
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td", recursive=False)
@@ -84,7 +88,6 @@ class BancoFalabellaParser(BankParser):
         if "chile" in banco_l or "edwards" in banco_l:
             return "Banco de Chile"
 
-        # Fallback: devolver el nombre del banco tal cual
         return banco.strip() if banco.strip() else "Desconocido"
 
 

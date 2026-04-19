@@ -41,8 +41,10 @@ class Transaction(Base):
     budget_period_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("budget_periods.id"), nullable=True
     )
+    # Sin unique: un email puede generar múltiples transacciones
+    # (ej: transferencia entre cuentas propias = 1 email + 2 transacciones)
     email_id: Mapped[Optional[int]] = mapped_column(
-        ForeignKey("emails.id"), nullable=True, unique=True
+        ForeignKey("emails.id"), nullable=True
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
@@ -55,4 +57,4 @@ class Transaction(Base):
     budget_period: Mapped[Optional["BudgetPeriod"]] = relationship(
         back_populates="transactions"
     )
-    email: Mapped[Optional["Email"]] = relationship(back_populates="transaction")
+    email: Mapped[Optional["Email"]] = relationship(back_populates="transactions")
