@@ -3,8 +3,9 @@ from datetime import date, datetime
 
 from bs4 import BeautifulSoup
 
-from app.parsers.base import BankParser, ParseResult
+from app.parsers.base import BankParser, ParseResult, extract_email_address
 from app.parsers.registry import register
+from app.parsers.senders import TRANSACTIONAL_SENDERS
 
 _PRODUCT_MAP = {
     "cuentarut": "BancoEstado CuentaRUT",
@@ -13,12 +14,16 @@ _PRODUCT_MAP = {
     "vista pension alimenticia": "BancoEstado Ahorro",
 }
 
+_MINE = frozenset({
+    addr for addr in TRANSACTIONAL_SENDERS if "bancoestado" in addr
+})
+
 
 class BancoEstadoParser(BankParser):
     def matches(self, sender: str) -> bool:
-        return "bancoestado" in sender.lower()
+        return extract_email_address(sender) in _MINE
 
-    def parse(self, email_html: str) -> ParseResult | list[ParseResult]:
+    def parse(self, email_html: str, sender: str = "") -> ParseResult | list[ParseResult]:
         soup = BeautifulSoup(email_html, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         text_lower = text.lower()
@@ -30,14 +35,13 @@ class BancoEstadoParser(BankParser):
         return self._parse_notification(soup, text)
 
     # ------------------------------------------------------------------
-    # Transferencia entre cuentas propias (td/th pairs)
+    # Transferencia entre cuentas propias
     # ------------------------------------------------------------------
     def _parse_self_transfer(
         self, soup: BeautifulSoup, text: str,
     ) -> list[ParseResult]:
         kv = self._extract_kv_th(soup)
 
-        # Monto
         raw_amount = kv.get("Monto Total", "")
         if not raw_amount:
             m = re.search(r"\$\s?([\d.]+)", text)
@@ -46,11 +50,9 @@ class BancoEstadoParser(BankParser):
             raw_amount = m.group(1)
         amount = int(raw_amount.replace("$", "").replace(".", "").strip())
 
-        # Cuentas origen y destino
         origin = self._resolve_account(kv.get("origen_product", ""))
         dest = self._resolve_account(kv.get("destino_product", ""))
 
-        # Fecha
         raw_date = kv.get("Fecha y hora", "")
         if raw_date:
             try:
@@ -79,15 +81,12 @@ class BancoEstadoParser(BankParser):
 
     @staticmethod
     def _extract_kv_th(soup: BeautifulSoup) -> dict[str, str]:
-        """Extrae pares clave/valor de filas <tr> con <td> label y <th> valor.
-        También identifica secciones Origen/Destino para el campo Producto."""
         kv: dict[str, str] = {}
         section = ""
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td", recursive=False)
             ths = tr.find_all("th", recursive=False)
 
-            # Detectar sección (Origen: / Destino:)
             if len(tds) == 1 and not ths:
                 label = tds[0].get_text(strip=True).rstrip(":")
                 if label.lower() in ("origen", "destino"):
@@ -99,14 +98,13 @@ class BancoEstadoParser(BankParser):
                 val = ths[0].get_text(strip=True)
                 if key and val:
                     kv[key] = val
-                    # Guardar producto con prefijo de sección
                     if key.lower() == "producto:" or key.lower() == "producto":
                         if section:
                             kv[f"{section}_product"] = val
         return kv
 
     # ------------------------------------------------------------------
-    # TEF: comprobante de transferencia con tabla estructurada (3 cols)
+    # TEF: comprobante de transferencia
     # ------------------------------------------------------------------
     def _parse_tef(self, soup: BeautifulSoup, text: str) -> ParseResult:
         amount_match = re.search(r"Monto\s+transferido\s*:\s*\$\s?([\d.]+)", text)
@@ -139,7 +137,6 @@ class BancoEstadoParser(BankParser):
 
     @staticmethod
     def _extract_kv_colon(soup: BeautifulSoup) -> dict[str, str]:
-        """Extrae pares clave/valor de filas <tr> con formato [Label] [:] [Valor]."""
         kv: dict[str, str] = {}
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td")
@@ -161,7 +158,7 @@ class BancoEstadoParser(BankParser):
         return "BancoEstado CuentaRUT"
 
     # ------------------------------------------------------------------
-    # Notificación simple (formato original)
+    # Notificación simple
     # ------------------------------------------------------------------
     def _parse_notification(self, soup: BeautifulSoup, text: str) -> ParseResult:
         amount_match = re.search(r"\$\s?([\d.]+)", text)

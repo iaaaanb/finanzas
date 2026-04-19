@@ -8,6 +8,8 @@ export default function TransactionDetail() {
   const navigate = useNavigate();
   const { triggerRefresh } = useRefresh();
   const [tx, setTx] = useState(null);
+  const [email, setEmail] = useState(null);
+  const [showEmailBody, setShowEmailBody] = useState(false);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [budgets, setBudgets] = useState([]);
@@ -40,6 +42,10 @@ export default function TransactionDetail() {
         if (rule.category_id) setRememberCat(true);
         if (rule.budget_id) setRememberBudget(true);
       }).catch(() => {});
+
+      if (t.email_id) {
+        api.getEmail(t.email_id).then(setEmail).catch(() => {});
+      }
     });
   }, [id]);
 
@@ -122,6 +128,12 @@ export default function TransactionDetail() {
     }
   };
 
+  // Gmail deeplink: #all/<internalId> works across labels (inbox/archive/etc).
+  // rfc822msgid: would require the RFC-822 Message-ID header, not the API id we store.
+  const gmailUrl = email
+    ? `https://mail.google.com/mail/u/0/#all/${email.gmail_message_id}`
+    : null;
+
   return (
     <div style={{ maxWidth: 500 }}>
       <h1 style={{ marginBottom: "0.25rem" }}>
@@ -132,10 +144,58 @@ export default function TransactionDetail() {
           </span>
         )}
       </h1>
-      <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1.5rem" }}>
+      <p style={{ color: "var(--text-muted)", fontSize: "0.85rem", marginBottom: "1rem" }}>
         Creada el {tx.created_at.split("T")[0]}
         {tx.email_id && <span> · Desde email #{tx.email_id}</span>}
       </p>
+
+      {email && (
+        <div className="card" style={{ marginBottom: "1rem", fontSize: "0.85rem" }}>
+          <div style={{ color: "var(--text-muted)", marginBottom: 4 }}>
+            <strong style={{ color: "var(--text)" }}>De:</strong> {email.sender}
+          </div>
+          <div style={{ color: "var(--text-muted)", marginBottom: 10 }}>
+            <strong style={{ color: "var(--text)" }}>Asunto:</strong> {email.subject}
+          </div>
+
+          <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
+            <button
+              type="button"
+              className="btn-secondary"
+              onClick={() => setShowEmailBody((v) => !v)}
+            >
+              {showEmailBody ? "Ocultar email" : "Ver email completo"}
+            </button>
+            {gmailUrl && (
+              <a
+                href={gmailUrl}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="btn-secondary"
+                style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
+              >
+                Abrir en Gmail ↗
+              </a>
+            )}
+          </div>
+
+          {showEmailBody && (
+            <iframe
+              srcDoc={email.body_html}
+              sandbox=""
+              style={{
+                width: "100%",
+                height: 400,
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                background: "white",
+                marginTop: "0.75rem",
+              }}
+              title="Email preview"
+            />
+          )}
+        </div>
+      )}
 
       {error && (
         <div style={{ background: "var(--red)", color: "white", padding: "0.5rem 0.75rem", borderRadius: 6, marginBottom: "1rem", fontSize: "0.85rem" }}>
