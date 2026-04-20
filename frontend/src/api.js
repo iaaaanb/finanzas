@@ -7,8 +7,6 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    // Preservar el detail estructurado para que la UI pueda diferenciar casos
-    // (ej: 409 con active_run vs error genérico).
     const error = new Error(
       typeof err.detail === "string" ? err.detail : (err.detail?.message || res.statusText)
     );
@@ -73,6 +71,16 @@ export const api = {
   getAutoAssignRules: () => request("/auto-assign-rules"),
   getAutoAssignByCounterpart: (counterpart) =>
     request(`/auto-assign-rules/by-counterpart/${encodeURIComponent(counterpart)}`),
+  enableAutoConfirm: (counterpart) =>
+    request(
+      `/auto-assign-rules/enable-auto-confirm/${encodeURIComponent(counterpart)}`,
+      { method: "POST" }
+    ),
+  disableAutoConfirm: (counterpart) =>
+    request(
+      `/auto-assign-rules/disable-auto-confirm/${encodeURIComponent(counterpart)}`,
+      { method: "POST" }
+    ),
 
   // Counterparts
   getCounterparts: () => request("/counterparts"),

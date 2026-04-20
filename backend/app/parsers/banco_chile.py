@@ -8,6 +8,14 @@ Los emails transaccionales se distinguen por la combinación remitente + asunto:
 | serviciodetransferencias@bancochile.cl     | Transferencia a Terceros        | EXPENSE (TEF enviada)      |
 | enviodigital@bancoedwards.cl               | Cargo en Cuenta                 | EXPENSE (compra con débito)|
 | enviodigital@bancochile.cl                 | Cargo en Cuenta                 | EXPENSE (compra con débito)|
+
+Nota sobre routing de cuentas en EXPENSE (regla de negocio de Ian, abril 2026):
+  Ian tiene UNA sola cuenta en Banco de Chile. Por lo tanto toda EXPENSE de BCh
+  va a esa cuenta. No intentamos extraer account_number en EXPENSE — dejamos
+  que _resolve_account caiga al match por nombre de banco.
+
+  INCOME es distinto: Ian recibe plata en TODAS sus cuentas (BCh incluido),
+  entonces sí necesitamos el account_number para elegir la correcta.
 """
 import re
 from datetime import date, datetime
@@ -69,7 +77,9 @@ class BancoChileParser(BankParser):
         amount = self._parse_amount(kv.get("Monto") or self._first_amount_in(text))
         counterpart = self._extract_sender_name_from_prose(text)
         tx_date = self._parse_date(kv.get("Fecha"), text)
-        # En INCOME hay solo una cuenta, y es la tuya (destino).
+        # En INCOME el número sí importa: Ian puede recibir plata a cualquiera
+        # de sus cuentas (incluida una BancoEstado, cuando es otra cuenta BCh
+        # la que envía). account_number nos deja elegir la correcta.
         account_number = last4(kv.get("Cuenta destino", ""))
 
         return ParseResult(
@@ -84,7 +94,9 @@ class BancoChileParser(BankParser):
     # ------------------------------------------------------------------
     # EXPENSE TEF: "Transferencia a Terceros"
     # Estructura: secciones Origen / Destino, ambas con "Nº de Cuenta".
-    # Tu cuenta es la del Origen, la contraparte está en Destino.
+    # La contraparte está en Destino. La cuenta origen SIEMPRE es la única
+    # BCh de Ian → no hace falta extraer account_number, el match por banco
+    # es suficiente y más robusto.
     # ------------------------------------------------------------------
     def _parse_tef_expense(self, soup: BeautifulSoup, text: str) -> ParseResult:
         kv = self._extract_kv_sectioned(soup)
@@ -96,9 +108,6 @@ class BancoChileParser(BankParser):
             or "Desconocido"
         )
         tx_date = self._parse_date(None, text)
-        account_number = last4(
-            kv.get("origen_Nº de Cuenta") or kv.get("origen_No de Cuenta", "")
-        )
 
         return ParseResult(
             amount=amount,
@@ -106,12 +115,13 @@ class BancoChileParser(BankParser):
             counterpart=counterpart,
             date=tx_date,
             account_bank="Banco de Chile",
-            account_number=account_number,
+            account_number=None,  # Regla de negocio: única cuenta BCh de Ian
         )
 
     # ------------------------------------------------------------------
     # EXPENSE débito: "Cargo en Cuenta" (Edwards/BCh)
-    # Compras con tarjeta de débito. La cuenta se identifica como ****XXXX.
+    # Compras con tarjeta de débito. Misma regla: una sola cuenta BCh,
+    # el match por banco basta.
     # ------------------------------------------------------------------
     def _parse_cargo_debito(self, soup: BeautifulSoup, text: str) -> ParseResult:
         text_lower = text.lower()
@@ -133,18 +143,13 @@ class BancoChileParser(BankParser):
 
         tx_date = self._parse_date(None, text)
 
-        account_number = None
-        acc_match = re.search(r"Cuenta\s+\*+(\d{4})", text, re.IGNORECASE)
-        if acc_match:
-            account_number = acc_match.group(1)
-
         return ParseResult(
             amount=amount,
             tx_type="EXPENSE",
             counterpart=counterpart,
             date=tx_date,
             account_bank="Banco de Chile",
-            account_number=account_number,
+            account_number=None,  # Regla de negocio: única cuenta BCh de Ian
         )
 
     # ------------------------------------------------------------------
@@ -189,8 +194,6 @@ class BancoChileParser(BankParser):
         como prose: 'nuestro(a) cliente <Nombre> ha efectuado una transferencia
         de fondos a tu cuenta'. Buscamos ese patrón en el texto plano.
         """
-        # El paréntesis (a) es literal en el texto ("nuestro(a)"), así que lo
-        # escapamos. Capturamos lo que venga entre "cliente" y "ha efectuado".
         m = re.search(
             r"nuestro\(a\)\s+cliente\s+(.+?)\s+ha\s+efectuado",
             text,
@@ -198,7 +201,6 @@ class BancoChileParser(BankParser):
         )
         if m:
             return m.group(1).strip()
-        # Fallback más permisivo por si el formato cambia levemente
         m = re.search(
             r"cliente\s+(.+?)\s+ha\s+efectuado\s+una\s+transferencia",
             text,

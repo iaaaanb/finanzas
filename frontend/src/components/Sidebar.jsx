@@ -12,7 +12,7 @@ function formatRelative(dt) {
   return `hace ${Math.floor(diffSec / 86400)} d`;
 }
 
-export default function Sidebar() {
+export default function Sidebar({ isMobile = false, isOpen = false, onClose }) {
   const [accounts, setAccounts] = useState([]);
   const [budgets, setBudgets] = useState([]);
   const [syncStatus, setSyncStatus] = useState(null);
@@ -28,18 +28,35 @@ export default function Sidebar() {
 
   const lastRun = syncStatus?.last_run;
   const activeRun = syncStatus?.active_run;
-  // Color del indicador: amarillo si hay un run activo, rojo si el último falló,
-  // gris si no hay nada o todo está bien.
   const dotColor = activeRun
     ? "var(--yellow)"
     : lastRun?.status === "FAILED"
     ? "var(--red)"
     : "var(--text-muted)";
 
+  // En mobile el sidebar es un drawer fixed que aparece desde la izquierda.
+  // En desktop es el panel lateral estático de siempre.
+  const sidebarStyle = isMobile
+    ? {
+        position: "fixed",
+        top: 0,
+        left: 0,
+        bottom: 0,
+        width: 280,
+        maxWidth: "85vw",
+        zIndex: 20,
+        transform: isOpen ? "translateX(0)" : "translateX(-100%)",
+        transition: "transform 0.25s ease",
+        boxShadow: isOpen ? "2px 0 8px rgba(0, 0, 0, 0.3)" : "none",
+      }
+    : {
+        width: 280,
+        flexShrink: 0,
+      };
+
   return (
     <aside
       style={{
-        width: 280,
         background: "var(--bg-card)",
         borderRight: "1px solid var(--border)",
         padding: "1.5rem 1rem",
@@ -47,8 +64,33 @@ export default function Sidebar() {
         flexDirection: "column",
         gap: "1.5rem",
         overflowY: "auto",
+        ...sidebarStyle,
       }}
     >
+      {/* Botón de cerrar, solo en mobile */}
+      {isMobile && (
+        <button
+          onClick={onClose}
+          aria-label="Cerrar menú"
+          style={{
+            position: "absolute",
+            top: 12,
+            right: 12,
+            width: 32,
+            height: 32,
+            padding: 0,
+            background: "transparent",
+            border: "none",
+            color: "var(--text-muted)",
+            fontSize: "1.5rem",
+            cursor: "pointer",
+            lineHeight: 1,
+          }}
+        >
+          ×
+        </button>
+      )}
+
       <div>
         <Link to="/" style={{ fontSize: "1.25rem", fontWeight: 700 }}>
           Finanzas

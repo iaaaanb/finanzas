@@ -8,6 +8,7 @@ from app.models.budget_period import BudgetPeriod
 from app.parsers.registry import find_parser
 from app.parsers.base import extract_email_address, ParseResult
 from app.parsers.senders import is_transactional
+from app.services.transactions import confirm_transaction
 
 
 def _resolve_account(db: Session, result: ParseResult) -> Account:
@@ -34,7 +35,12 @@ def _resolve_account(db: Session, result: ParseResult) -> Account:
 
 def process_email(db: Session, email_data: dict) -> Email:
     """Procesa un email crudo: lo guarda en DB y, si el remitente está en el
-    registro de direcciones transaccionales, intenta parsearlo."""
+    registro de direcciones transaccionales, intenta parsearlo.
+
+    Si el parser produce transacciones cuya contraparte tiene auto_confirm=True
+    y todos los datos necesarios (category + budget_period para EXPENSE),
+    se confirma automáticamente aquí mismo en vez de dejarla PENDING.
+    """
 
     # Deduplicación
     existing = db.scalars(
@@ -83,6 +89,7 @@ def process_email(db: Session, email_data: dict) -> Email:
             # Auto-assign rule
             category_id = None
             budget_period_id = None
+            should_auto_confirm = False
             rule = db.scalars(
                 select(AutoAssignRule).where(
                     AutoAssignRule.counterpart == result.counterpart
@@ -99,6 +106,7 @@ def process_email(db: Session, email_data: dict) -> Email:
                     ).first()
                     if period:
                         budget_period_id = period.id
+                should_auto_confirm = rule.auto_confirm
 
             tx = Transaction(
                 type=TxType(result.tx_type),
@@ -112,6 +120,22 @@ def process_email(db: Session, email_data: dict) -> Email:
                 email_id=email.id,
             )
             db.add(tx)
+            db.flush()  # Asegurar que tx tenga id antes de confirmar
+
+            # Auto-confirmación: solo si la regla lo pide Y tenemos todo lo
+            # necesario. Si falta budget en un EXPENSE, queda PENDING
+            # silenciosamente (el usuario lo verá en el feed y podrá resolver).
+            if should_auto_confirm:
+                can_confirm = (
+                    tx.type != TxType.EXPENSE or tx.budget_period_id is not None
+                )
+                if can_confirm:
+                    try:
+                        confirm_transaction(db, tx)
+                    except Exception:
+                        # No dejar que un fallo de auto-confirm tumbe el parseo.
+                        # La tx queda PENDING y el usuario la maneja manualmente.
+                        pass
 
     except Exception:
         # Error real de parseo: el remitente es transaccional pero el formato es nuevo

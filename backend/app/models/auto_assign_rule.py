@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import String, DateTime, ForeignKey, func
+from sqlalchemy import String, Boolean, DateTime, ForeignKey, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.models.base import Base
@@ -17,6 +17,12 @@ class AutoAssignRule(Base):
     )
     budget_id: Mapped[Optional[int]] = mapped_column(
         ForeignKey("budgets.id"), nullable=True
+    )
+    # Si True, transacciones parseadas con esta contraparte se confirman
+    # automáticamente (sin pasar por PENDING), siempre que tengan category_id
+    # y budget_period_id poblados.
+    auto_confirm: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="false"
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, server_default=func.now()
