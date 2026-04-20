@@ -3,17 +3,38 @@ import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useRefresh } from "./RefreshContext";
 
+function formatRelative(dt) {
+  if (!dt) return null;
+  const diffSec = Math.floor((Date.now() - new Date(dt).getTime()) / 1000);
+  if (diffSec < 60) return `hace ${diffSec}s`;
+  if (diffSec < 3600) return `hace ${Math.floor(diffSec / 60)} min`;
+  if (diffSec < 86400) return `hace ${Math.floor(diffSec / 3600)} h`;
+  return `hace ${Math.floor(diffSec / 86400)} d`;
+}
+
 export default function Sidebar() {
   const [accounts, setAccounts] = useState([]);
   const [budgets, setBudgets] = useState([]);
+  const [syncStatus, setSyncStatus] = useState(null);
   const { key } = useRefresh();
 
   useEffect(() => {
     api.getAccounts().then(setAccounts);
     api.getBudgets().then(setBudgets);
+    api.getSyncStatus().then(setSyncStatus).catch(() => {});
   }, [key]);
 
   const total = accounts.reduce((s, a) => s + a.balance, 0);
+
+  const lastRun = syncStatus?.last_run;
+  const activeRun = syncStatus?.active_run;
+  // Color del indicador: amarillo si hay un run activo, rojo si el último falló,
+  // gris si no hay nada o todo está bien.
+  const dotColor = activeRun
+    ? "var(--yellow)"
+    : lastRun?.status === "FAILED"
+    ? "var(--red)"
+    : "var(--text-muted)";
 
   return (
     <aside
@@ -124,6 +145,32 @@ export default function Sidebar() {
         <Link to="/accounts">Cuentas</Link>
         <Link to="/categories">Categorías</Link>
         <Link to="/budgets">Presupuestos</Link>
+        <Link
+          to="/sync"
+          style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}
+        >
+          <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <span
+              style={{
+                width: 8,
+                height: 8,
+                borderRadius: "50%",
+                background: dotColor,
+              }}
+            />
+            Sincronización
+          </span>
+          {lastRun && !activeRun && (
+            <span style={{ fontSize: "0.7rem", color: "var(--text-muted)" }}>
+              {formatRelative(lastRun.finished_at || lastRun.started_at)}
+            </span>
+          )}
+          {activeRun && (
+            <span style={{ fontSize: "0.7rem", color: "var(--yellow)" }}>
+              corriendo…
+            </span>
+          )}
+        </Link>
       </nav>
     </aside>
   );

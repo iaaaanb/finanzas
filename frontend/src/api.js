@@ -7,7 +7,14 @@ async function request(path, options = {}) {
   });
   if (!res.ok) {
     const err = await res.json().catch(() => ({}));
-    throw new Error(err.detail || res.statusText);
+    // Preservar el detail estructurado para que la UI pueda diferenciar casos
+    // (ej: 409 con active_run vs error genérico).
+    const error = new Error(
+      typeof err.detail === "string" ? err.detail : (err.detail?.message || res.statusText)
+    );
+    error.status = res.status;
+    error.detail = err.detail;
+    throw error;
   }
   if (res.status === 204) return null;
   return res.json();
@@ -75,4 +82,15 @@ export const api = {
   getEmail: (id) => request(`/emails/${id}`),
   resolveEmail: (id, data) =>
     request(`/emails/${id}/resolve`, { method: "POST", body: JSON.stringify(data) }),
+
+  // Sync
+  getSyncStatus: () => request("/sync/status"),
+  getSyncRuns: (limit = 20) => request(`/sync/runs?limit=${limit}`),
+  triggerIncrementalSync: () =>
+    request("/sync/incremental", { method: "POST" }),
+  triggerBackfillSync: (sinceDate) =>
+    request("/sync/backfill", {
+      method: "POST",
+      body: JSON.stringify({ since_date: sinceDate }),
+    }),
 };

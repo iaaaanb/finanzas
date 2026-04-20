@@ -5,7 +5,16 @@ from sqlalchemy import select
 
 from app.database import SessionLocal
 from app.models import Base, Account
-from app.routers import accounts, categories, budgets, transactions, auto_assign_rules, counterparts, emails
+from app.routers import (
+    accounts,
+    categories,
+    budgets,
+    transactions,
+    auto_assign_rules,
+    counterparts,
+    emails,
+    sync,
+)
 
 
 def seed_default_account():
@@ -33,6 +42,7 @@ app.include_router(transactions.router)
 app.include_router(auto_assign_rules.router)
 app.include_router(counterparts.router)
 app.include_router(emails.router)
+app.include_router(sync.router)
 
 
 @app.get("/api/health")

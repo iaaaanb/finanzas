@@ -1,0 +1,17 @@
+[Unit]
+Description=Finanzas - timer horario para sync de emails
+# Si la unidad asociada se borra, borrar también el timer.
+Requires=finanzas-sync.service
+
+[Timer]
+# Arranca 5 min después de boot (no apenas arranca, así Docker tiene tiempo).
+OnBootSec=5min
+# Y después cada hora desde el último arranque.
+OnUnitActiveSec=1h
+# Persistent=true => si la máquina estuvo apagada y se perdió un trigger,
+# correr ni bien arranque (en lugar de esperar al próximo intervalo natural).
+Persistent=true
+Unit=finanzas-sync.service
+
+[Install]
+WantedBy=timers.target
