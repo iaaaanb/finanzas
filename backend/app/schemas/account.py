@@ -7,6 +7,7 @@ class AccountCreate(BaseModel):
     bank: str
     color: str
     balance: int = 0
+    account_number: str | None = None
 
 
 class AccountUpdate(BaseModel):
@@ -14,6 +15,7 @@ class AccountUpdate(BaseModel):
     bank: str | None = None
     color: str | None = None
     balance: int | None = None
+    account_number: str | None = None
 
 
 class AccountRead(BaseModel):
@@ -22,6 +24,7 @@ class AccountRead(BaseModel):
     bank: str
     color: str
     balance: int
+    account_number: str | None
     created_at: datetime
 
     model_config = {"from_attributes": True}

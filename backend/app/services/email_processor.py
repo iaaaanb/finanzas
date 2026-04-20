@@ -6,8 +6,30 @@ from app.models.account import Account
 from app.models.auto_assign_rule import AutoAssignRule
 from app.models.budget_period import BudgetPeriod
 from app.parsers.registry import find_parser
-from app.parsers.base import extract_email_address
+from app.parsers.base import extract_email_address, ParseResult
 from app.parsers.senders import is_transactional
+
+
+def _resolve_account(db: Session, result: ParseResult) -> Account:
+    """Encuentra la Account correcta en orden de precisión:
+    1. Match exacto por account_number (últimos 4 dígitos)
+    2. Match por nombre de banco
+    3. Fallback al primer Account (típicamente "Efectivo")
+    """
+    if result.account_number:
+        account = db.scalars(
+            select(Account).where(Account.account_number == result.account_number)
+        ).first()
+        if account:
+            return account
+
+    account = db.scalars(
+        select(Account).where(Account.bank == result.account_bank)
+    ).first()
+    if account:
+        return account
+
+    return db.scalars(select(Account).order_by(Account.id)).first()
 
 
 def process_email(db: Session, email_data: dict) -> Email:
@@ -29,15 +51,14 @@ def process_email(db: Session, email_data: dict) -> Email:
         received_at=email_data["received_at"],
     )
 
-    # Gate 1: ¿el remitente está en el registro de direcciones transaccionales?
+    # Gate 1: ¿remitente en el registro de transaccionales?
     addr = extract_email_address(email_data["sender"])
     if not is_transactional(addr):
         email.status = EmailStatus.SKIPPED
         db.add(email)
         return email
 
-    # Gate 2: ¿algún parser reclama este remitente?
-    # (Si el registro tiene una dirección sin parser asociado, se omite con un warning)
+    # Gate 2: ¿algún parser lo reclama?
     parser = find_parser(email_data["sender"])
     if parser is None:
         email.status = EmailStatus.SKIPPED
@@ -45,7 +66,11 @@ def process_email(db: Session, email_data: dict) -> Email:
         return email
 
     try:
-        raw = parser.parse(email_data["body_html"], sender=email_data["sender"])
+        raw = parser.parse(
+            email_data["body_html"],
+            sender=email_data["sender"],
+            subject=email_data["subject"],
+        )
         results = raw if isinstance(raw, list) else [raw]
 
         email.status = EmailStatus.PARSED
@@ -53,12 +78,7 @@ def process_email(db: Session, email_data: dict) -> Email:
         db.flush()
 
         for result in results:
-            # Buscar cuenta por banco
-            account = db.scalars(
-                select(Account).where(Account.bank == result.account_bank)
-            ).first()
-            if not account:
-                account = db.scalars(select(Account).order_by(Account.id)).first()
+            account = _resolve_account(db, result)
 
             # Auto-assign rule
             category_id = None
