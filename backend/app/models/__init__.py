@@ -6,3 +6,4 @@ from app.models.budget_period import BudgetPeriod
 from app.models.transaction import Transaction, TxType, TxStatus
 from app.models.email import Email, EmailStatus
 from app.models.auto_assign_rule import AutoAssignRule
+from app.models.sync_run import SyncRun, SyncStatus, SyncTrigger

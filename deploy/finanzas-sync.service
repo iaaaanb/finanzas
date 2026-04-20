@@ -1,0 +1,17 @@
+[Unit]
+Description=Finanzas - sync incremental de emails desde Gmail
+# Esperar a que docker esté arriba antes de intentar correr esto.
+Requires=docker.service
+After=docker.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/finanzas
+# -T desactiva la asignación de TTY, necesario en contexto sin terminal.
+# El script maneja sus propios exit codes (0 = ok o skip, 1 = fail).
+ExecStart=/usr/bin/docker compose -f docker-compose.prod.yml exec -T api python -m app.scripts.run_sync
+# Si falla, no spamear logs hasta el próximo timer normal.
+Restart=no
+# Output va al journal, visible con: journalctl -u finanzas-sync.service
+StandardOutput=journal
+StandardError=journal
