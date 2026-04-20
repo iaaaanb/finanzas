@@ -67,7 +67,7 @@ class BancoChileParser(BankParser):
         kv = self._extract_kv_flat(soup)
 
         amount = self._parse_amount(kv.get("Monto") or self._first_amount_in(text))
-        counterpart = self._extract_sender_name_from_prose(soup)
+        counterpart = self._extract_sender_name_from_prose(text)
         tx_date = self._parse_date(kv.get("Fecha"), text)
         # En INCOME hay solo una cuenta, y es la tuya (destino).
         account_number = last4(kv.get("Cuenta destino", ""))
@@ -184,15 +184,28 @@ class BancoChileParser(BankParser):
         return date.today()
 
     @staticmethod
-    def _extract_sender_name_from_prose(soup: BeautifulSoup) -> str:
-        """Para INCOME: nombre del remitente está en '<b>Nombre</b>' dentro de
-        una celda que menciona 'cliente' y 'a tu cuenta'."""
-        for td in soup.find_all("td"):
-            td_text = td.get_text(strip=True).lower()
-            if "cliente" in td_text and ("a tu cuenta" in td_text or "ha efectuado" in td_text):
-                b_tag = td.find("b")
-                if b_tag:
-                    return b_tag.get_text(strip=True)
+    def _extract_sender_name_from_prose(text: str) -> str:
+        """Para INCOME TEF: el nombre del remitente aparece en el cuerpo del email
+        como prose: 'nuestro(a) cliente <Nombre> ha efectuado una transferencia
+        de fondos a tu cuenta'. Buscamos ese patrón en el texto plano.
+        """
+        # El paréntesis (a) es literal en el texto ("nuestro(a)"), así que lo
+        # escapamos. Capturamos lo que venga entre "cliente" y "ha efectuado".
+        m = re.search(
+            r"nuestro\(a\)\s+cliente\s+(.+?)\s+ha\s+efectuado",
+            text,
+            re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip()
+        # Fallback más permisivo por si el formato cambia levemente
+        m = re.search(
+            r"cliente\s+(.+?)\s+ha\s+efectuado\s+una\s+transferencia",
+            text,
+            re.IGNORECASE,
+        )
+        if m:
+            return m.group(1).strip()
         return "Desconocido"
 
     @staticmethod
