@@ -16,13 +16,13 @@ class BciParser(BankParser):
     def matches(self, sender: str) -> bool:
         return extract_email_address(sender) in _MINE
 
-    def parse(self, email_html: str, sender: str = "") -> ParseResult:
+    def parse(
+        self, email_html: str, sender: str = "", subject: str = ""
+    ) -> ParseResult:
         soup = BeautifulSoup(email_html, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         text_lower = text.lower()
 
-        # Por ahora solo manejamos avisos de transferencia recibida.
-        # Otros formatos (transferencia enviada, etc) lanzan ValueError → PENDING.
         if "has recibido" not in text_lower:
             raise ValueError(
                 "Formato BCI no reconocido. Solo se maneja 'Aviso de Transferencia "
@@ -61,14 +61,16 @@ class BciParser(BankParser):
             else:
                 tx_date = date.today()
 
-        # BCI notifica transferencias recibidas EN tu cuenta de Banco de Chile,
-        # no en una cuenta BCI. Si en el futuro aparece otro caso, hay que detectarlo aquí.
+        # BCI notifica que recibiste plata "hacia tu cuenta del Banco de Chile"
+        # pero NO incluye el número. account_number se queda None y el matching
+        # cae al fallback por nombre de banco ("Banco de Chile").
         return ParseResult(
             amount=amount,
             tx_type="INCOME",
             counterpart=counterpart,
             date=tx_date,
             account_bank="Banco de Chile",
+            account_number=None,
         )
 
 

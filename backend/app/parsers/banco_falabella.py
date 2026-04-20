@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from bs4 import BeautifulSoup
 
-from app.parsers.base import BankParser, ParseResult, extract_email_address
+from app.parsers.base import BankParser, ParseResult, extract_email_address, last4
 from app.parsers.registry import register
 from app.parsers.senders import TRANSACTIONAL_SENDERS
 
@@ -16,7 +16,9 @@ class BancoFalabellaParser(BankParser):
     def matches(self, sender: str) -> bool:
         return extract_email_address(sender) in _MINE
 
-    def parse(self, email_html: str, sender: str = "") -> ParseResult:
+    def parse(
+        self, email_html: str, sender: str = "", subject: str = ""
+    ) -> ParseResult:
         soup = BeautifulSoup(email_html, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         kv = self._extract_kv(soup)
@@ -50,10 +52,12 @@ class BancoFalabellaParser(BankParser):
             tx_date = date.today()
 
         # --- Cuenta destino ---
+        cuenta_destino = kv.get("Cuenta de destino", "")
         account_bank = self._resolve_account(
             kv.get("Banco de destino", ""),
-            kv.get("Cuenta de destino", ""),
+            cuenta_destino,
         )
+        account_number = last4(cuenta_destino)
 
         return ParseResult(
             amount=amount,
@@ -61,6 +65,7 @@ class BancoFalabellaParser(BankParser):
             counterpart=counterpart,
             date=tx_date,
             account_bank=account_bank,
+            account_number=account_number,
         )
 
     @staticmethod

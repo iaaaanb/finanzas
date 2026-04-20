@@ -9,7 +9,13 @@ export default function AccountDetail() {
 
   useEffect(() => {
     api.getAccount(id).then((a) =>
-      setForm({ name: a.name, bank: a.bank, color: a.color, balance: a.balance })
+      setForm({
+        name: a.name,
+        bank: a.bank,
+        color: a.color,
+        balance: a.balance,
+        account_number: a.account_number || "",
+      })
     );
   }, [id]);
 
@@ -17,7 +23,11 @@ export default function AccountDetail() {
 
   const handleSave = async (e) => {
     e.preventDefault();
-    await api.updateAccount(id, { ...form, balance: Number(form.balance) });
+    await api.updateAccount(id, {
+      ...form,
+      balance: Number(form.balance),
+      account_number: form.account_number.trim() || null,
+    });
     navigate("/accounts");
   };
 
@@ -42,6 +52,18 @@ export default function AccountDetail() {
             <label>Saldo</label>
             <input type="number" value={form.balance} onChange={(e) => setForm({ ...form, balance: e.target.value })} />
           </div>
+        </div>
+        <div className="form-group">
+          <label>Últimos 4 dígitos de la cuenta</label>
+          <input
+            value={form.account_number}
+            onChange={(e) => setForm({ ...form, account_number: e.target.value })}
+            maxLength={4}
+            placeholder="ej: 5092"
+          />
+          <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
+            Usado para asignar emails entrantes a esta cuenta
+          </span>
         </div>
         <button type="submit" className="btn-primary">Guardar</button>
       </form>

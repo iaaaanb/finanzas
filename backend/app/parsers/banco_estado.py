@@ -3,7 +3,7 @@ from datetime import date, datetime
 
 from bs4 import BeautifulSoup
 
-from app.parsers.base import BankParser, ParseResult, extract_email_address
+from app.parsers.base import BankParser, ParseResult, extract_email_address, last4
 from app.parsers.registry import register
 from app.parsers.senders import TRANSACTIONAL_SENDERS
 
@@ -23,7 +23,9 @@ class BancoEstadoParser(BankParser):
     def matches(self, sender: str) -> bool:
         return extract_email_address(sender) in _MINE
 
-    def parse(self, email_html: str, sender: str = "") -> ParseResult | list[ParseResult]:
+    def parse(
+        self, email_html: str, sender: str = "", subject: str = ""
+    ) -> ParseResult | list[ParseResult]:
         soup = BeautifulSoup(email_html, "html.parser")
         text = soup.get_text(separator=" ", strip=True)
         text_lower = text.lower()
@@ -35,7 +37,7 @@ class BancoEstadoParser(BankParser):
         return self._parse_notification(soup, text)
 
     # ------------------------------------------------------------------
-    # Transferencia entre cuentas propias
+    # Transferencia entre cuentas propias (1 email = 2 transacciones)
     # ------------------------------------------------------------------
     def _parse_self_transfer(
         self, soup: BeautifulSoup, text: str,
@@ -53,6 +55,10 @@ class BancoEstadoParser(BankParser):
         origin = self._resolve_account(kv.get("origen_product", ""))
         dest = self._resolve_account(kv.get("destino_product", ""))
 
+        # Números de cuenta para cada lado
+        origin_number = last4(kv.get("origen_account_number", ""))
+        dest_number = last4(kv.get("destino_account_number", ""))
+
         raw_date = kv.get("Fecha y hora", "")
         if raw_date:
             try:
@@ -69,6 +75,7 @@ class BancoEstadoParser(BankParser):
                 counterpart=f"Transferencia a {dest}",
                 date=tx_date,
                 account_bank=origin,
+                account_number=origin_number,
             ),
             ParseResult(
                 amount=amount,
@@ -76,17 +83,22 @@ class BancoEstadoParser(BankParser):
                 counterpart=f"Transferencia desde {origin}",
                 date=tx_date,
                 account_bank=dest,
+                account_number=dest_number,
             ),
         ]
 
     @staticmethod
     def _extract_kv_th(soup: BeautifulSoup) -> dict[str, str]:
+        """Extrae kv del formato self-transfer.
+        Identifica también secciones Origen/Destino y prefija sus campos.
+        """
         kv: dict[str, str] = {}
         section = ""
         for tr in soup.find_all("tr"):
             tds = tr.find_all("td", recursive=False)
             ths = tr.find_all("th", recursive=False)
 
+            # Detectar sección
             if len(tds) == 1 and not ths:
                 label = tds[0].get_text(strip=True).rstrip(":")
                 if label.lower() in ("origen", "destino"):
@@ -98,9 +110,12 @@ class BancoEstadoParser(BankParser):
                 val = ths[0].get_text(strip=True)
                 if key and val:
                     kv[key] = val
-                    if key.lower() == "producto:" or key.lower() == "producto":
-                        if section:
+                    key_lower = key.lower().rstrip(":")
+                    if section:
+                        if key_lower == "producto":
                             kv[f"{section}_product"] = val
+                        elif key_lower == "n° de cuenta" or key_lower == "no de cuenta" or "cuenta" in key_lower:
+                            kv[f"{section}_account_number"] = val
         return kv
 
     # ------------------------------------------------------------------
@@ -126,6 +141,8 @@ class BancoEstadoParser(BankParser):
             tx_date = date.today()
 
         account_bank = self._resolve_account(kv.get("Producto", ""))
+        # En TEF el "N° de Cuenta" es la nuestra (la cuenta origen del cargo)
+        account_number = last4(kv.get("N° de Cuenta", "")) or last4(kv.get("No de Cuenta", ""))
 
         return ParseResult(
             amount=amount,
@@ -133,6 +150,7 @@ class BancoEstadoParser(BankParser):
             counterpart=counterpart,
             date=tx_date,
             account_bank=account_bank,
+            account_number=account_number,
         )
 
     @staticmethod
@@ -158,7 +176,7 @@ class BancoEstadoParser(BankParser):
         return "BancoEstado CuentaRUT"
 
     # ------------------------------------------------------------------
-    # Notificación simple
+    # Notificación simple ("cuenta terminada en ****9395")
     # ------------------------------------------------------------------
     def _parse_notification(self, soup: BeautifulSoup, text: str) -> ParseResult:
         amount_match = re.search(r"\$\s?([\d.]+)", text)
@@ -186,12 +204,22 @@ class BancoEstadoParser(BankParser):
         else:
             tx_date = date.today()
 
+        # "cuenta terminada en ****9395"
+        account_number = None
+        acc_match = re.search(
+            r"cuenta\s+terminada\s+en\s+\*+(\d{4})",
+            text, re.IGNORECASE,
+        )
+        if acc_match:
+            account_number = acc_match.group(1)
+
         return ParseResult(
             amount=amount,
             tx_type=tx_type,
             counterpart=counterpart,
             date=tx_date,
             account_bank="BancoEstado CuentaRUT",
+            account_number=account_number,
         )
 
 
