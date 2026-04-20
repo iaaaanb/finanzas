@@ -33,6 +33,25 @@ def _resolve_account(db: Session, result: ParseResult) -> Account:
     return db.scalars(select(Account).order_by(Account.id)).first()
 
 
+def _record_email_as_pending(db: Session, email_data: dict) -> Email:
+    """Guarda el email con status=PENDING en una transacción limpia.
+
+    Se llama después de un rollback, cuando el parseo (o cualquier paso
+    siguiente) falló y solo queremos dejar constancia del email para que
+    aparezca en /errors y el usuario pueda resolverlo manualmente.
+    """
+    email = Email(
+        gmail_message_id=email_data["gmail_message_id"],
+        sender=email_data["sender"],
+        subject=email_data["subject"],
+        body_html=email_data["body_html"],
+        received_at=email_data["received_at"],
+        status=EmailStatus.PENDING,
+    )
+    db.add(email)
+    return email
+
+
 def process_email(db: Session, email_data: dict) -> Email:
     """Procesa un email crudo: lo guarda en DB y, si el remitente está en el
     registro de direcciones transaccionales, intenta parsearlo.
@@ -40,6 +59,12 @@ def process_email(db: Session, email_data: dict) -> Email:
     Si el parser produce transacciones cuya contraparte tiene auto_confirm=True
     y todos los datos necesarios (category + budget_period para EXPENSE),
     se confirma automáticamente aquí mismo en vez de dejarla PENDING.
+
+    Manejo de errores: si cualquier paso falla entre "email parseado" y
+    "transacciones creadas+confirmadas", hacemos rollback completo y
+    re-insertamos el email con status=PENDING en una sesión limpia. Esto evita
+    dejar el session en estado 'InFailedSqlTransaction', que tumbaría el resto
+    del batch si alguien está reusando la misma sesión.
     """
 
     # Deduplicación
@@ -49,28 +74,39 @@ def process_email(db: Session, email_data: dict) -> Email:
     if existing:
         return existing
 
-    email = Email(
-        gmail_message_id=email_data["gmail_message_id"],
-        sender=email_data["sender"],
-        subject=email_data["subject"],
-        body_html=email_data["body_html"],
-        received_at=email_data["received_at"],
-    )
-
     # Gate 1: ¿remitente en el registro de transaccionales?
     addr = extract_email_address(email_data["sender"])
     if not is_transactional(addr):
-        email.status = EmailStatus.SKIPPED
+        email = Email(
+            gmail_message_id=email_data["gmail_message_id"],
+            sender=email_data["sender"],
+            subject=email_data["subject"],
+            body_html=email_data["body_html"],
+            received_at=email_data["received_at"],
+            status=EmailStatus.SKIPPED,
+        )
         db.add(email)
         return email
 
     # Gate 2: ¿algún parser lo reclama?
     parser = find_parser(email_data["sender"])
     if parser is None:
-        email.status = EmailStatus.SKIPPED
+        email = Email(
+            gmail_message_id=email_data["gmail_message_id"],
+            sender=email_data["sender"],
+            subject=email_data["subject"],
+            body_html=email_data["body_html"],
+            received_at=email_data["received_at"],
+            status=EmailStatus.SKIPPED,
+        )
         db.add(email)
         return email
 
+    # ---- Parseo + creación de transacciones ----
+    # Este bloque es la parte "delicada": si cualquier paso acá falla, la
+    # sesión entera puede quedar en estado inválido. Lo envolvemos en try/except
+    # y en caso de error hacemos rollback + guardamos el email como PENDING en
+    # una sesión limpia.
     try:
         raw = parser.parse(
             email_data["body_html"],
@@ -79,7 +115,14 @@ def process_email(db: Session, email_data: dict) -> Email:
         )
         results = raw if isinstance(raw, list) else [raw]
 
-        email.status = EmailStatus.PARSED
+        email = Email(
+            gmail_message_id=email_data["gmail_message_id"],
+            sender=email_data["sender"],
+            subject=email_data["subject"],
+            body_html=email_data["body_html"],
+            received_at=email_data["received_at"],
+            status=EmailStatus.PARSED,
+        )
         db.add(email)
         db.flush()
 
@@ -123,23 +166,25 @@ def process_email(db: Session, email_data: dict) -> Email:
             db.flush()  # Asegurar que tx tenga id antes de confirmar
 
             # Auto-confirmación: solo si la regla lo pide Y tenemos todo lo
-            # necesario. Si falta budget en un EXPENSE, queda PENDING
-            # silenciosamente (el usuario lo verá en el feed y podrá resolver).
+            # necesario. Si falta budget en un EXPENSE, queda PENDING (no es
+            # un error — el usuario lo maneja manualmente).
             if should_auto_confirm:
                 can_confirm = (
                     tx.type != TxType.EXPENSE or tx.budget_period_id is not None
                 )
                 if can_confirm:
-                    try:
-                        confirm_transaction(db, tx)
-                    except Exception:
-                        # No dejar que un fallo de auto-confirm tumbe el parseo.
-                        # La tx queda PENDING y el usuario la maneja manualmente.
-                        pass
+                    # No envolvemos en try/except: si confirm_transaction falla,
+                    # la sesión queda poisoned y no podemos recuperar este email
+                    # mid-stream. Dejamos que la excepción escale al try/except
+                    # de process_email, que hace rollback limpio + marca el
+                    # email como PENDING.
+                    confirm_transaction(db, tx)
+
+        return email
 
     except Exception:
-        # Error real de parseo: el remitente es transaccional pero el formato es nuevo
-        email.status = EmailStatus.PENDING
-        db.add(email)
-
-    return email
+        # Rollback completo para salir del estado 'InFailedSqlTransaction'.
+        # Después, en una transacción limpia, guardamos el email como PENDING
+        # para que aparezca en /errors.
+        db.rollback()
+        return _record_email_as_pending(db, email_data)
