@@ -17,7 +17,9 @@ export default function TransactionDetail() {
   const [form, setForm] = useState({});
   const [rememberCat, setRememberCat] = useState(false);
   const [rememberBudget, setRememberBudget] = useState(false);
+  const [autoConfirm, setAutoConfirm] = useState(false);
   const [error, setError] = useState(null);
+  const [banner, setBanner] = useState(null); // para mensajes de éxito del sweep
 
   useEffect(() => {
     api.getAccounts().then(setAccounts);
@@ -41,6 +43,7 @@ export default function TransactionDetail() {
       api.getAutoAssignByCounterpart(t.counterpart).then((rule) => {
         if (rule.category_id) setRememberCat(true);
         if (rule.budget_id) setRememberBudget(true);
+        if (rule.auto_confirm) setAutoConfirm(true);
       }).catch(() => {});
 
       if (t.email_id) {
@@ -59,21 +62,22 @@ export default function TransactionDetail() {
     return b?.active_period?.id || "";
   };
 
+  const savePayload = () => ({
+    amount: Number(form.amount),
+    date: form.date,
+    counterpart: form.counterpart,
+    comment: form.comment || null,
+    account_id: Number(form.account_id),
+    category_id: form.category_id ? Number(form.category_id) : null,
+    budget_period_id: form.budget_period_id ? Number(form.budget_period_id) : null,
+    remember_category: rememberCat,
+    remember_budget: rememberBudget,
+  });
+
   const handleSave = async () => {
     setError(null);
     try {
-      const payload = {
-        amount: Number(form.amount),
-        date: form.date,
-        counterpart: form.counterpart,
-        comment: form.comment || null,
-        account_id: Number(form.account_id),
-        category_id: form.category_id ? Number(form.category_id) : null,
-        budget_period_id: form.budget_period_id ? Number(form.budget_period_id) : null,
-        remember_category: rememberCat,
-        remember_budget: rememberBudget,
-      };
-      const updated = await api.updateTransaction(id, payload);
+      const updated = await api.updateTransaction(id, savePayload());
       setTx(updated);
       triggerRefresh();
     } catch (e) {
@@ -84,10 +88,12 @@ export default function TransactionDetail() {
   const handleConfirm = async () => {
     setError(null);
     try {
-      await handleSave();
-      const confirmed = await api.confirmTransaction(id);
-      setTx(confirmed);
+      // Guardar cambios del form antes de confirmar (mismo comportamiento que antes)
+      await api.updateTransaction(id, savePayload());
+      await api.confirmTransaction(id);
       triggerRefresh();
+      // Al confirmar, volver a donde veníamos (típicamente el feed de pending).
+      navigate(-1);
     } catch (e) {
       setError(e.message);
     }
@@ -106,6 +112,7 @@ export default function TransactionDetail() {
         updates.budget_period_id = getActivePeriodId(rule.budget_id);
         setRememberBudget(true);
       }
+      if (rule.auto_confirm) setAutoConfirm(true);
       if (Object.keys(updates).length > 0) {
         setForm((f) => ({ ...f, ...updates }));
       }
@@ -128,8 +135,57 @@ export default function TransactionDetail() {
     }
   };
 
-  // Gmail deeplink: #all/<internalId> works across labels (inbox/archive/etc).
-  // rfc822msgid: would require the RFC-822 Message-ID header, not the API id we store.
+  // Auto-confirm solo tiene sentido si hay categoría y presupuesto (para gastos).
+  // Para ingresos no exigimos budget.
+  const canEnableAutoConfirm =
+    !!form.category_id && (!isExpense || !!form.budget_period_id);
+
+  const handleEnableAutoConfirm = async () => {
+    if (!canEnableAutoConfirm) return;
+    setError(null);
+    setBanner(null);
+    try {
+      // Primero guardamos el estado actual para que la regla se cree con los
+      // category/budget correctos (vía los checkboxes Recordar, que forzamos).
+      setRememberCat(true);
+      setRememberBudget(true);
+      await api.updateTransaction(id, {
+        ...savePayload(),
+        remember_category: true,
+        remember_budget: true,
+      });
+      // Luego activamos auto_confirm + sweep de PENDING
+      const resp = await api.enableAutoConfirm(form.counterpart.trim());
+      setAutoConfirm(true);
+      triggerRefresh();
+      const msg =
+        resp.retroactive_confirmed === 0
+          ? "Auto-confirmación activada."
+          : `Auto-confirmación activada. ${resp.retroactive_confirmed} transacción(es) pendiente(s) confirmadas.` +
+            (resp.retroactive_skipped > 0
+              ? ` ${resp.retroactive_skipped} saltadas (sin presupuesto).`
+              : "");
+      setBanner(msg);
+      // La tx actual puede haberse confirmado en el sweep → refresh.
+      const refreshed = await api.getTransaction(id);
+      setTx(refreshed);
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
+  const handleDisableAutoConfirm = async () => {
+    setError(null);
+    setBanner(null);
+    try {
+      await api.disableAutoConfirm(form.counterpart.trim());
+      setAutoConfirm(false);
+      setBanner("Auto-confirmación desactivada.");
+    } catch (e) {
+      setError(e.message);
+    }
+  };
+
   const gmailUrl = email
     ? `https://mail.google.com/mail/u/0/#all/${email.gmail_message_id}`
     : null;
@@ -141,6 +197,11 @@ export default function TransactionDetail() {
         {isPending && (
           <span className="badge" style={{ background: "var(--yellow)", color: "#000", marginLeft: 10, fontSize: "0.7rem", verticalAlign: "middle" }}>
             Pendiente
+          </span>
+        )}
+        {autoConfirm && (
+          <span className="badge" style={{ background: "var(--green)", color: "white", marginLeft: 6, fontSize: "0.7rem", verticalAlign: "middle" }}>
+            Auto
           </span>
         )}
       </h1>
@@ -159,21 +220,11 @@ export default function TransactionDetail() {
           </div>
 
           <div style={{ display: "flex", gap: "0.5rem", flexWrap: "wrap" }}>
-            <button
-              type="button"
-              className="btn-secondary"
-              onClick={() => setShowEmailBody((v) => !v)}
-            >
+            <button type="button" className="btn-secondary" onClick={() => setShowEmailBody((v) => !v)}>
               {showEmailBody ? "Ocultar email" : "Ver email completo"}
             </button>
             {gmailUrl && (
-              <a
-                href={gmailUrl}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="btn-secondary"
-                style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}
-              >
+              <a href={gmailUrl} target="_blank" rel="noopener noreferrer" className="btn-secondary" style={{ textDecoration: "none", display: "inline-flex", alignItems: "center" }}>
                 Abrir en Gmail ↗
               </a>
             )}
@@ -197,6 +248,11 @@ export default function TransactionDetail() {
         </div>
       )}
 
+      {banner && (
+        <div style={{ background: "var(--green)", color: "white", padding: "0.5rem 0.75rem", borderRadius: 6, marginBottom: "1rem", fontSize: "0.85rem" }}>
+          {banner}
+        </div>
+      )}
       {error && (
         <div style={{ background: "var(--red)", color: "white", padding: "0.5rem 0.75rem", borderRadius: 6, marginBottom: "1rem", fontSize: "0.85rem" }}>
           {error}
@@ -206,28 +262,17 @@ export default function TransactionDetail() {
       <div className="card">
         <div className="form-group">
           <label>Monto (CLP)</label>
-          <input
-            type="number"
-            value={form.amount}
-            onChange={(e) => setForm({ ...form, amount: e.target.value })}
-          />
+          <input type="number" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} />
         </div>
 
         <div style={{ display: "flex", gap: "1rem" }}>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Fecha</label>
-            <input
-              type="date"
-              value={form.date}
-              onChange={(e) => setForm({ ...form, date: e.target.value })}
-            />
+            <input type="date" value={form.date} onChange={(e) => setForm({ ...form, date: e.target.value })} />
           </div>
           <div className="form-group" style={{ flex: 1 }}>
             <label>Cuenta</label>
-            <select
-              value={form.account_id}
-              onChange={(e) => setForm({ ...form, account_id: e.target.value })}
-            >
+            <select value={form.account_id} onChange={(e) => setForm({ ...form, account_id: e.target.value })}>
               {accounts.map((a) => (
                 <option key={a.id} value={a.id}>{a.name}</option>
               ))}
@@ -253,22 +298,14 @@ export default function TransactionDetail() {
         {isExpense && (
           <div className="form-group">
             <label>Presupuesto (obligatorio)</label>
-            <select
-              value={selectedBudgetId}
-              onChange={(e) => handleBudgetChange(e.target.value)}
-            >
+            <select value={selectedBudgetId} onChange={(e) => handleBudgetChange(e.target.value)}>
               <option value="">— Seleccionar —</option>
               {budgets.map((b) => (
                 <option key={b.id} value={b.id}>{b.name}</option>
               ))}
             </select>
             <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: "0.85rem", color: "var(--text-muted)" }}>
-              <input
-                type="checkbox"
-                checked={rememberBudget}
-                onChange={(e) => setRememberBudget(e.target.checked)}
-                style={{ width: "auto" }}
-              />
+              <input type="checkbox" checked={rememberBudget} onChange={(e) => setRememberBudget(e.target.checked)} style={{ width: "auto" }} />
               Recordar para "{form.counterpart}"
             </label>
           </div>
@@ -276,36 +313,24 @@ export default function TransactionDetail() {
 
         <div className="form-group">
           <label>Categoría (opcional)</label>
-          <select
-            value={form.category_id}
-            onChange={(e) => setForm({ ...form, category_id: e.target.value })}
-          >
+          <select value={form.category_id} onChange={(e) => setForm({ ...form, category_id: e.target.value })}>
             <option value="">— Sin categoría —</option>
             {categories.map((c) => (
               <option key={c.id} value={c.id}>{c.name}</option>
             ))}
           </select>
           <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 6, fontSize: "0.85rem", color: "var(--text-muted)" }}>
-            <input
-              type="checkbox"
-              checked={rememberCat}
-              onChange={(e) => setRememberCat(e.target.checked)}
-              style={{ width: "auto" }}
-            />
+            <input type="checkbox" checked={rememberCat} onChange={(e) => setRememberCat(e.target.checked)} style={{ width: "auto" }} />
             Recordar para "{form.counterpart}"
           </label>
         </div>
 
         <div className="form-group">
           <label>Comentario</label>
-          <textarea
-            value={form.comment}
-            onChange={(e) => setForm({ ...form, comment: e.target.value })}
-            rows={2}
-          />
+          <textarea value={form.comment} onChange={(e) => setForm({ ...form, comment: e.target.value })} rows={2} />
         </div>
 
-        <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem" }}>
+        <div style={{ display: "flex", gap: "0.75rem", marginTop: "0.5rem", flexWrap: "wrap" }}>
           {isPending ? (
             <button className="btn-primary" onClick={handleConfirm}>
               Confirmar
@@ -318,6 +343,44 @@ export default function TransactionDetail() {
           <button className="btn-secondary" onClick={() => navigate(-1)}>
             Volver
           </button>
+        </div>
+
+        {/* Auto-confirm: aparece siempre que estén los datos necesarios. */}
+        <div style={{ marginTop: "1rem", paddingTop: "1rem", borderTop: "1px solid var(--border)" }}>
+          {autoConfirm ? (
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: "0.75rem", flexWrap: "wrap" }}>
+              <div style={{ fontSize: "0.85rem", color: "var(--text-muted)" }}>
+                Futuras transacciones de <strong>{form.counterpart}</strong> se confirmarán automáticamente.
+              </div>
+              <button className="btn-secondary" onClick={handleDisableAutoConfirm}>
+                Desactivar auto
+              </button>
+            </div>
+          ) : (
+            <div>
+              <button
+                className="btn-secondary"
+                onClick={handleEnableAutoConfirm}
+                disabled={!canEnableAutoConfirm}
+                title={!canEnableAutoConfirm ? "Primero asigná categoría y presupuesto" : ""}
+                style={{ width: "100%" }}
+              >
+                Aceptar automáticamente "{form.counterpart}"
+              </button>
+              {!canEnableAutoConfirm && (
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 6 }}>
+                  {isExpense
+                    ? "Asigná categoría y presupuesto para activar."
+                    : "Asigná categoría para activar."}
+                </p>
+              )}
+              {canEnableAutoConfirm && (
+                <p style={{ fontSize: "0.75rem", color: "var(--text-muted)", marginTop: 6 }}>
+                  Confirma esta transacción y todas las futuras con la misma contraparte.
+                </p>
+              )}
+            </div>
+          )}
         </div>
       </div>
     </div>
