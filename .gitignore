@@ -16,6 +16,8 @@ env/
 .env
 .env.local
 *.env
+.env.*
+!.env.example
 
 # Distribution / packaging
 build/
@@ -44,3 +46,4 @@ logs/
 *.db
 *.sqlite
 *.sqlite3
+
