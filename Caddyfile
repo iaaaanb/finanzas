@@ -1,4 +1,19 @@
 finanzas.ian1.cl {
+    # HTTP Basic Auth protege TODO el sitio. La API y el SPA comparten origen,
+    # así que una sola autenticación cubre ambos (el browser adjunta el header
+    # Authorization automáticamente a los fetch del frontend).
+    #
+    # Importante: el cron de sync (systemd timer en la droplet) NO pasa por
+    # Caddy — habla directo al contenedor api por la red interna de Docker,
+    # así que este auth no lo afecta.
+    #
+    # Generar el hash con:
+    #   docker run --rm caddy:2 caddy hash-password --plaintext 'tupassword'
+    # Copiá el output empezando con $2a$... y pegalo acá.
+    basic_auth {
+        ian REPLACE_WITH_BCRYPT_HASH
+    }
+
     handle /api/* {
         reverse_proxy api:8000
     }
