@@ -11,7 +11,8 @@ finanzas.ian1.cl {
     #   docker run --rm caddy:2 caddy hash-password --plaintext 'tupassword'
     # Copiá el output empezando con $2a$... y pegalo acá.
     basic_auth {
-        ian REPLACE_WITH_BCRYPT_HASH
+        ian $2a$14$Ps0AOR9jdCbdPt4I0RW5gOG0zb4Kie8nQlgSlqjlJ2utgKYkRAqm6
+
     }
 
     handle /api/* {
