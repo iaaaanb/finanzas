@@ -1,0 +1,12 @@
+{
+  "name": "finanzas-record-demo",
+  "private": true,
+  "type": "module",
+  "description": "Graba el GIF y las capturas del README manejando el stack de demo con Playwright.",
+  "scripts": {
+    "record": "./record.sh"
+  },
+  "dependencies": {
+    "playwright": "1.49.1"
+  }
+}
