@@ -1,0 +1,19 @@
+# Frontend del stack de demo: compila el SPA y lo sirve con Caddy.
+#
+# Multi-stage a propósito: la alternativa (montar ./frontend en un contenedor
+# de node y compilar ahí) deja dist/ y node_modules/ escritos por root en el
+# árbol del repo. Acá no se escribe nada afuera de la imagen.
+#
+# El contexto de build es la raíz del repo, porque necesita frontend/ y el
+# Caddyfile de la demo.
+
+FROM node:22-alpine AS build
+WORKDIR /app
+COPY frontend/package.json frontend/package-lock.json ./
+RUN npm ci --no-audit --no-fund
+COPY frontend/ ./
+RUN npm run build
+
+FROM caddy:2
+COPY deploy/Caddyfile.demo /etc/caddy/Caddyfile
+COPY --from=build /app/dist /srv

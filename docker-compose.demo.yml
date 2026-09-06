@@ -1,0 +1,63 @@
+# Stack de demo: la app completa, con datos de ejemplo y sin Gmail.
+#
+#   docker compose -f docker-compose.demo.yml up --build
+#   → http://localhost:8080
+#
+# Diferencias con el stack normal:
+#   - DEMO_MODE=1: el sync lee de una casilla en memoria (app/demo/) en vez de
+#     la API de Gmail, así que "Traer emails nuevos" funciona sin credenciales.
+#   - La base arranca sembrada con ~4 semanas de movimientos de ejemplo.
+#   - Volumen y puertos propios: no toca la base de desarrollo.
+#   - Caddy sirve el frontend compilado y la API en el mismo origen, igual que
+#     en producción pero sin basic auth ni TLS. El SPA se compila dentro de la
+#     imagen, así que levantar la demo no escribe nada en el repo.
+
+# Nombre de proyecto propio: la demo nunca pisa los contenedores ni el
+# volumen del stack de desarrollo (docker-compose.yml).
+name: finanzas-demo
+
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: finanzas
+      POSTGRES_PASSWORD: finanzas
+      POSTGRES_DB: finanzas
+    ports:
+      - "5434:5432"
+    volumes:
+      - demo_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U finanzas"]
+      interval: 2s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    environment:
+      DATABASE_URL: postgresql+psycopg://finanzas:finanzas@db:5432/finanzas
+      DEMO_MODE: "1"
+    # Expuesta aparte de Caddy por si querés pegarle directo (/docs, curl).
+    ports:
+      - "8010:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+    command: >
+      sh -c "alembic upgrade head &&
+             python -m app.scripts.seed_demo --if-empty &&
+             uvicorn app.main:app --host 0.0.0.0 --port 8000"
+
+  # Compila el SPA y lo sirve. Ver deploy/Dockerfile.demo-web.
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.demo-web
+    ports:
+      - "8080:80"
+    depends_on:
+      - api
+
+volumes:
+  demo_pgdata:

@@ -11,6 +11,13 @@ SCOPES = ["https://www.googleapis.com/auth/gmail.readonly"]
 
 
 def get_gmail_service():
+    if settings.demo_mode:
+        # Sin credenciales ni red: la casilla falsa de app.demo implementa
+        # el mismo subconjunto de la API que usa el sync.
+        from app.demo.fake_gmail import FakeGmailService
+
+        return FakeGmailService()
+
     token_path = Path(settings.gmail_token_path)
     creds_path = Path(settings.gmail_credentials_path)
 

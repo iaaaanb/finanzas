@@ -6,8 +6,10 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
+      // VITE_API_TARGET permite apuntar el dev server a otra API
+      // (por ejemplo la del stack de demo, en el puerto 8010).
       "/api": {
-        target: "http://localhost:8000",
+        target: process.env.VITE_API_TARGET || "http://localhost:8000",
         changeOrigin: true,
       },
     },

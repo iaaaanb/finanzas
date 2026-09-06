@@ -1,0 +1,10 @@
+# Solo aplica a builds con la raíz del repo como contexto
+# (deploy/Dockerfile.demo-web). El backend usa ./backend como contexto.
+.git
+docs/media
+scripts/record-demo/node_modules
+scripts/record-demo/out
+frontend/node_modules
+frontend/dist
+credentials
+**/__pycache__

@@ -1,0 +1,14 @@
+# Caddy para el stack de demo (docker-compose.demo.yml).
+# Igual que el de producción pero sin dominio, sin TLS y sin basic auth:
+# la demo es pública a propósito.
+
+:80 {
+    handle /api/* {
+        reverse_proxy api:8000
+    }
+    handle {
+        root * /srv
+        try_files {path} /index.html
+        file_server
+    }
+}

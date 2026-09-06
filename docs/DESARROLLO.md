@@ -148,6 +148,41 @@ docker compose exec api python -m app.scripts.dump_email --id 832
 docker compose exec api python -m app.scripts.inspect_senders
 ```
 
+## Demo mode (no Gmail, no real data)
+
+`docker-compose.demo.yml` runs the whole app with a fake inbox, for demos and
+for anyone who wants to run the project without credentials:
+
+```bash
+docker compose -f docker-compose.demo.yml up --build   # → http://localhost:8080
+
+# Reset the sample data (also un-does the demo sync, handy before re-recording)
+docker compose -f docker-compose.demo.yml exec api python -m app.scripts.seed_demo --reset
+```
+
+It has its own project name (`finanzas-demo`), its own volume and ports
+(API on 8010, Postgres on 5434), so it never touches the dev stack.
+
+Moving parts:
+
+- `DEMO_MODE=1` → `get_gmail_service()` returns `app.demo.fake_gmail.FakeGmailService`
+  instead of the Google client. It implements only the two calls the sync uses
+  (`users().messages().list/get`), so the sync, parsers and processing code run
+  unchanged.
+- `app/demo/inbox.py` holds the sample emails — one per parser path, plus one
+  unparseable email and one non-transactional sender. Dates are relative to
+  "now" so the transactions always fall inside the open budget periods. If you
+  change a parser, check this file still parses: `parsed` should stay at 5.
+- `app/scripts/seed_demo.py` seeds accounts, categories, budgets (3 closed
+  periods + 1 open), confirmed transactions, rules, sync history and one error
+  email. Balances aren't hardcoded: transactions are confirmed through
+  `confirm_transaction`, the same service the API uses.
+- The seeded emails end 6 hours back, so an incremental sync in the demo picks
+  up exactly the batch in `inbox.py`.
+
+`scripts/record-demo/` drives that stack with Playwright to regenerate
+`docs/media/demo.gif` and the README screenshots. See its README.
+
 ## Prod deploy workflow
 
 ```bash
