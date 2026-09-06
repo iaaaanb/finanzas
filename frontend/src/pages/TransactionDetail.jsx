@@ -116,7 +116,9 @@ export default function TransactionDetail() {
       if (Object.keys(updates).length > 0) {
         setForm((f) => ({ ...f, ...updates }));
       }
-    } catch {}
+    } catch {
+      // No hay regla para esta contraparte: no hay nada que precargar.
+    }
   };
 
   const selectedBudgetId = (() => {

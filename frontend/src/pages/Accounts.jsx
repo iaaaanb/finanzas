@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { api } from "../api";
 
 export default function Accounts() {
@@ -12,7 +12,6 @@ export default function Accounts() {
     balance: 0,
     account_number: "",
   });
-  const navigate = useNavigate();
 
   useEffect(() => {
     api.getAccounts().then(setAccounts);
@@ -65,7 +64,7 @@ export default function Accounts() {
               value={form.account_number}
               onChange={(e) => setForm({ ...form, account_number: e.target.value })}
               maxLength={4}
-              placeholder="ej: 5092"
+              placeholder="ej: 4820"
             />
             <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
               Usado para asignar emails entrantes a esta cuenta

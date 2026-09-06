@@ -7,7 +7,6 @@ export default function TransactionFeed() {
   const [transactions, setTransactions] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [categories, setCategories] = useState([]);
-  const [budgets, setBudgets] = useState([]);
 
   const filters = {
     type: searchParams.get("type"),
@@ -26,7 +25,6 @@ export default function TransactionFeed() {
   useEffect(() => {
     api.getAccounts().then(setAccounts);
     api.getCategories().then(setCategories);
-    api.getBudgets().then(setBudgets);
   }, []);
 
   useEffect(() => {
