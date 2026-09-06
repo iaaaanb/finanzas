@@ -2,10 +2,11 @@ import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { api } from "../api";
 import { useRefresh } from "./RefreshContext";
+import { parseApiDate } from "../utils/datetime";
 
 function formatRelative(dt) {
   if (!dt) return null;
-  const diffSec = Math.floor((Date.now() - new Date(dt).getTime()) / 1000);
+  const diffSec = Math.floor((Date.now() - parseApiDate(dt).getTime()) / 1000);
   if (diffSec < 60) return `hace ${diffSec}s`;
   if (diffSec < 3600) return `hace ${Math.floor(diffSec / 60)} min`;
   if (diffSec < 86400) return `hace ${Math.floor(diffSec / 3600)} h`;

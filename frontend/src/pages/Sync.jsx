@@ -1,6 +1,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { api } from "../api";
 import { useRefresh } from "../components/RefreshContext";
+import { parseApiDate } from "../utils/datetime";
 
 const TRIGGER_LABELS = {
   CRON: "Automático",
@@ -16,7 +17,7 @@ const STATUS_COLORS = {
 
 function formatRelative(dt) {
   if (!dt) return "—";
-  const d = new Date(dt);
+  const d = parseApiDate(dt);
   const diffSec = Math.floor((Date.now() - d.getTime()) / 1000);
   if (diffSec < 60) return `hace ${diffSec}s`;
   if (diffSec < 3600) return `hace ${Math.floor(diffSec / 60)} min`;
@@ -26,7 +27,7 @@ function formatRelative(dt) {
 
 function formatAbsolute(dt) {
   if (!dt) return "—";
-  return new Date(dt).toLocaleString("es-CL", {
+  return parseApiDate(dt).toLocaleString("es-CL", {
     dateStyle: "short",
     timeStyle: "short",
   });
@@ -36,8 +37,8 @@ function RunRow({ run }) {
   const duration =
     run.finished_at && run.started_at
       ? Math.round(
-          (new Date(run.finished_at).getTime() -
-            new Date(run.started_at).getTime()) /
+          (parseApiDate(run.finished_at).getTime() -
+            parseApiDate(run.started_at).getTime()) /
             1000
         )
       : null;
