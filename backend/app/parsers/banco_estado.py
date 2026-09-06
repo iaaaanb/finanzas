@@ -176,7 +176,7 @@ class BancoEstadoParser(BankParser):
         return "BancoEstado CuentaRUT"
 
     # ------------------------------------------------------------------
-    # Notificación simple ("cuenta terminada en ****9395")
+    # Notificación simple ("cuenta terminada en ****4820")
     # ------------------------------------------------------------------
     def _parse_notification(self, soup: BeautifulSoup, text: str) -> ParseResult:
         amount_match = re.search(r"\$\s?([\d.]+)", text)
@@ -204,7 +204,7 @@ class BancoEstadoParser(BankParser):
         else:
             tx_date = date.today()
 
-        # "cuenta terminada en ****9395"
+        # "cuenta terminada en ****4820"
         account_number = None
         acc_match = re.search(
             r"cuenta\s+terminada\s+en\s+\*+(\d{4})",

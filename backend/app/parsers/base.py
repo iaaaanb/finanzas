@@ -49,17 +49,17 @@ def extract_email_address(sender: str) -> str:
 
 def last4(account_string: str) -> Optional[str]:
     """Extrae los últimos 4 dígitos de una representación de cuenta.
-    Acepta tanto formato enmascarado (****5092) como completo (00-016-17250-92,
-    32963285387). Devuelve None si no se puede extraer.
+    Acepta tanto formato enmascarado (****7890) como completo (00-011-45678-90,
+    12345678901). Devuelve None si no se puede extraer.
 
-    >>> last4('****5092')
-    '5092'
-    >>> last4('00-016-17250-92')
-    '5092'
-    >>> last4('32963285387')
-    '5387'
-    >>> last4('Cuenta Vista 00-016-17250-92')
-    '5092'
+    >>> last4('****7890')
+    '7890'
+    >>> last4('00-011-45678-90')
+    '7890'
+    >>> last4('12345678901')
+    '8901'
+    >>> last4('Cuenta Vista 00-011-45678-90')
+    '7890'
     >>> last4('') is None
     True
     >>> last4('abc') is None

@@ -59,7 +59,7 @@ export default function AccountDetail() {
             value={form.account_number}
             onChange={(e) => setForm({ ...form, account_number: e.target.value })}
             maxLength={4}
-            placeholder="ej: 5092"
+            placeholder="ej: 4820"
           />
           <span style={{ fontSize: "0.75rem", color: "var(--text-muted)" }}>
             Usado para asignar emails entrantes a esta cuenta

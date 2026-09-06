@@ -72,9 +72,11 @@ Banco Edwards = Banco de Chile (post-merger). Same parser handles both domains.
 | Account | Required `bank` value | `account_number` |
 |---|---|---|
 | Efectivo | `Efectivo` | (blank) |
-| Banco de Chile (FAN) | `Banco de Chile` | `5092` |
-| BancoEstado CuentaRUT | `BancoEstado CuentaRUT` | `4300` |
-| BancoEstado Ahorro | `BancoEstado Ahorro` | `5387` |
+| Banco de Chile (FAN) | `Banco de Chile` | `9064` |
+| BancoEstado CuentaRUT | `BancoEstado CuentaRUT` | `4820` |
+| BancoEstado Ahorro | `BancoEstado Ahorro` | `7315` |
+
+(The `account_number` column shows example values, not real ones.)
 
 NOT `"Banco Estado"` (two words), NOT `"BancoEstado"` alone. Exact strings. The parsers break if these drift.
 
