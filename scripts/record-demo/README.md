@@ -28,3 +28,19 @@ sueltas para el README.
 
 Cada corrida arranca con `seed_demo --reset`, así que el resultado es
 reproducible: si una toma sale mal, se ajusta el script y se vuelve a correr.
+
+## social-preview.png
+
+`docs/media/social-preview.png` es la tarjeta que muestra GitHub cuando se
+comparte el link del repo. No se puede subir por API: va a mano en
+Settings → General → Social preview. Para regenerarla con la demo levantada:
+
+```bash
+cd scripts/record-demo && node -e "$(cat <<'JS'
+const { chromium } = require('playwright');
+JS
+)"
+```
+
+o más simple, sacar una captura de 1280x640 de la portada y reemplazar el
+archivo.
