@@ -36,4 +36,9 @@ done
 ffmpeg -y -loglevel error -i out/shots/13-mobile.png \
   -vf "scale=420:-1:flags=lanczos" "$REPO/docs/media/mobile.png"
 
+echo "==> tarjeta social (1280x640)"
+node social.mjs
+ffmpeg -y -loglevel error -i out/social.png \
+  -vf "scale=1280:640:flags=lanczos" "$REPO/docs/media/social-preview.png"
+
 ls -lh "$REPO/docs/media"
